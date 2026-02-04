@@ -54,33 +54,51 @@
     *   如果不是，需要联系管理员审核。
     *   *提示：只有发布后的应用，权限才会生效。*
 
-## 2. 配置 Nanobot
+## 2. 启动与验证
 
-您可以通过设置环境变量来启动飞书模式。
+### 2.1 启动飞书 Bridge
 
-### 环境变量列表
-
-| 变量名 | 描述 | 示例 |
-|--------|------|------|
-| `FEISHU_APP_ID` | 应用 App ID | `cli_a1b2c3d4e5` |
-| `FEISHU_APP_SECRET` | 应用 App Secret | `abc123xyz...` |
-| `FEISHU_BRIDGE_PORT` | Nanobot Bridge 端口 | `18789` (默认) |
-
-### 启动方式
+Nanobot 提供了方便的命令行工具来启动飞书连接器：
 
 ```bash
-cd /Users/ryan/mycode/Nanobot/feishu-openclaw
-
-# 安装依赖 (如果还没装)
-npm install
-
-# 启动桥接
-export FEISHU_APP_ID="cli_xxxxxxxx"
-export FEISHU_APP_SECRET="xxxxxxxxxxxxxxxx"
-node bridge.mjs
+nanobot channels start
 ```
 
-## 3. 下一步
+*   首次运行时，程序会提示您输入 **App ID** 和 **App Secret**。
+*   输入后，这些信息会被自动保存，后续启动无需再次输入。
+*   看到日志显示 "Feishu ws client is ready" 即表示连接成功。
+
+### 2.2 配置白名单 (重要)
+
+为了安全起见，您需要将允许对话的飞书用户 OpenID 加入白名单。
+
+1.  在 Bridge 的启动日志中，当您向机器人发送消息时，会看到类似的日志：
+    `Permission denied for user: ou_xxxxxxxxxxxx`
+2.  复制这个 `ou_` 开头的 ID。
+3.  编辑 `~/.nanobot/config.json` 文件：
+
+```json
+"channels": {
+  "whatsapp": {
+    "enabled": true,
+    "bridgeUrl": "ws://localhost:3001",
+    "allowFrom": [
+        "ou_1234567890abcdef" // 将您的 ID 填在这里
+    ]
+  }
+}
+```
+*(注意：配置文件中 `whatsapp` 字段目前作为通用连接器配置项复用，后续版本会更名)*
+
+### 2.3 启动主服务
+
+保持 Bridge 窗口开启，在新的终端窗口中运行：
+
+```bash
+nanobot gateway
+```
+
+## 3. 恭喜！
 
 配置完成后，Nanobot 就能通过飞书接收消息了。
 飞书的长连接模式 (WebSocket) 不需要您配置任何公网 IP 或回调 URL，启动即可连接。
