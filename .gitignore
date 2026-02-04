@@ -1,0 +1,7 @@
+nanobot/**/__pycache__
+bridge/node_modules
+bridge/dist
+bridge/.env
+.venv
+*.pyc
+.DS_Store
