@@ -34,7 +34,7 @@ class WhatsAppChannel(BaseChannel):
         
         bridge_url = self.config.bridge_url
         
-        logger.info(f"Connecting to Unified Bridge at {bridge_url}...")
+        logger.info(f"Connecting to WhatsApp bridge at {bridge_url}...")
         
         self._running = True
         
@@ -43,7 +43,7 @@ class WhatsAppChannel(BaseChannel):
                 async with websockets.connect(bridge_url) as ws:
                     self._ws = ws
                     self._connected = True
-                    logger.info("Connected to Bridge")
+                    logger.info("Connected to WhatsApp bridge")
                     
                     # Listen for messages
                     async for message in ws:
@@ -99,45 +99,34 @@ class WhatsAppChannel(BaseChannel):
         msg_type = data.get("type")
         
         if msg_type == "message":
-            # Incoming message from WhatsApp or other bridge sources (Feishu/WeCom)
-            sender = data.get("sender") or data.get("from", "")
-            content = data.get("content") or data.get("body", "")
+            # Incoming message from WhatsApp
+            sender = data.get("sender", "")
+            content = data.get("content", "")
             
-            # WhatsApp sender is typically: <phone>@s.whatsapp.net
-            # Feishu sender is typically: ou_xxxxxxxx
-            
-            # Extract clean ID for sender_id (phone number or open_id)
-            if "@" in sender:
-                # WhatsApp: Use phone number as sender_id
-                sender_id = sender.split("@")[0]
-            else:
-                # Feishu/WeCom: Use the full ID as sender_id
-                sender_id = sender
+            # sender is typically: <phone>@s.whatsapp.net
+            # Extract just the phone number as chat_id
+            chat_id = sender.split("@")[0] if "@" in sender else sender
             
             # Handle voice transcription if it's a voice message
             if content == "[Voice Message]":
-                logger.info(f"Voice message received from {sender_id}, but direct download from bridge is not yet supported.")
+                logger.info(f"Voice message received from {chat_id}, but direct download from bridge is not yet supported.")
                 content = "[Voice Message: Transcription not available for WhatsApp yet]"
             
             await self._handle_message(
-                sender_id=sender_id,
-                chat_id=sender,  # Use full ID for replies
+                sender_id=chat_id,
+                chat_id=sender,  # Use full JID for replies
                 content=content,
                 metadata={
-                    "message_id": data.get("id") or data.get("msgId"),
+                    "message_id": data.get("id"),
                     "timestamp": data.get("timestamp"),
-                    "is_group": data.get("isGroup", False),
-                    "name": data.get("name")
+                    "is_group": data.get("isGroup", False)
                 }
             )
         
         elif msg_type == "status":
             # Connection status update
             status = data.get("status")
-            if not status and "Connected" in str(raw): # Fallback if status is text
-                 status = "connected"
-            
-            logger.info(f"Bridge status: {status}")
+            logger.info(f"WhatsApp status: {status}")
             
             if status == "connected":
                 self._connected = True
@@ -146,7 +135,7 @@ class WhatsAppChannel(BaseChannel):
         
         elif msg_type == "qr":
             # QR code for authentication
-            logger.info("Scan QR code in the bridge terminal (if using WhatsApp)")
+            logger.info("Scan QR code in the bridge terminal to connect WhatsApp")
         
         elif msg_type == "error":
-            logger.error(f"Bridge error: {data.get('error')}")
+            logger.error(f"WhatsApp bridge error: {data.get('error')}")

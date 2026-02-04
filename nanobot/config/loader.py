@@ -21,6 +21,7 @@ def get_data_dir() -> Path:
 def load_config(config_path: Path | None = None) -> Config:
     """
     Load configuration from file or create default.
+    Also merges 'feishu.json' and 'glm.json' if they exist in the same directory.
     
     Args:
         config_path: Optional path to config file. Uses default if not provided.
@@ -29,17 +30,52 @@ def load_config(config_path: Path | None = None) -> Config:
         Loaded configuration object.
     """
     path = config_path or get_config_path()
+    data = {}
     
     if path.exists():
         try:
             with open(path) as f:
                 data = json.load(f)
-            return Config.model_validate(convert_keys(data))
         except (json.JSONDecodeError, ValueError) as e:
             print(f"Warning: Failed to load config from {path}: {e}")
             print("Using default configuration.")
+            
+    # Load separate Feishu config
+    feishu_path = path.parent / "feishu.json"
+    if feishu_path.exists():
+        try:
+            with open(feishu_path) as f:
+                feishu_data = json.load(f)
+                if "channels" not in data:
+                    data["channels"] = {}
+                # Allow both full structure or direct config
+                if "feishu" in feishu_data and isinstance(feishu_data["feishu"], dict):
+                    data["channels"]["feishu"] = feishu_data["feishu"]
+                else:
+                    data["channels"]["feishu"] = feishu_data
+        except Exception as e:
+            print(f"Warning: Failed to load Feishu config from {feishu_path}: {e}")
+
+    # Load separate GLM (Zhipu) config
+    glm_path = path.parent / "glm.json"
+    if glm_path.exists():
+        try:
+            with open(glm_path) as f:
+                glm_data = json.load(f)
+                if "providers" not in data:
+                    data["providers"] = {}
+                 # Allow both full structure or direct config
+                if "zhipu" in glm_data and isinstance(glm_data["zhipu"], dict):
+                    data["providers"]["zhipu"] = glm_data["zhipu"]
+                else:
+                    data["providers"]["zhipu"] = glm_data
+        except Exception as e:
+             print(f"Warning: Failed to load GLM config from {glm_path}: {e}")
     
-    return Config()
+    if not data:
+        return Config()
+
+    return Config.model_validate(convert_keys(data))
 
 
 def save_config(config: Config, config_path: Path | None = None) -> None:

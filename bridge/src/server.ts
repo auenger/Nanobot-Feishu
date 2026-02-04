@@ -4,6 +4,7 @@
 
 import { WebSocketServer, WebSocket } from 'ws';
 import { WhatsAppClient, InboundMessage } from './whatsapp.js';
+import { FeishuManager, FeishuConfig } from './feishu.js';
 
 interface SendCommand {
   type: 'send';
@@ -19,14 +20,33 @@ interface BridgeMessage {
 export class BridgeServer {
   private wss: WebSocketServer | null = null;
   private wa: WhatsAppClient | null = null;
+  private feishu: FeishuManager | null = null;
   private clients: Set<WebSocket> = new Set();
 
-  constructor(private port: number, private authDir: string) {}
+  constructor(private port: number, private authDir: string) { }
 
   async start(): Promise<void> {
     // Create WebSocket server
     this.wss = new WebSocketServer({ port: this.port });
     console.log(`🌉 Bridge server listening on ws://localhost:${this.port}`);
+
+    // Initialize Feishu client
+    const feishuConfig = this.getFeishuConfig();
+    if (feishuConfig) {
+      console.log('🐦 Initializing Feishu Bridge...');
+      this.feishu = new FeishuManager(feishuConfig);
+      this.feishu.onMessage = (msg) => {
+        this.broadcast({
+          type: 'message',
+          from: msg.from,
+          body: msg.content,
+          name: msg.name || msg.from,
+          isGroup: msg.isGroup,
+          timestamp: msg.timestamp
+        });
+      };
+      await this.feishu.start().catch(e => console.error('Failed to start Feishu:', e));
+    }
 
     // Initialize WhatsApp client
     this.wa = new WhatsAppClient({
@@ -67,7 +87,23 @@ export class BridgeServer {
     await this.wa.connect();
   }
 
+  private getFeishuConfig(): FeishuConfig | null {
+    const { FEISHU_APP_ID, FEISHU_APP_SECRET } = process.env;
+    if (FEISHU_APP_ID && FEISHU_APP_SECRET) {
+      return {
+        appId: FEISHU_APP_ID,
+        appSecret: FEISHU_APP_SECRET
+      };
+    }
+    return null;
+  }
+
   private async handleCommand(cmd: SendCommand): Promise<void> {
+    if (this.feishu && (cmd.to.startsWith('ou_') || cmd.to.startsWith('oc_') || !this.wa)) {
+      await this.feishu.sendMessage(cmd.to, cmd.text);
+      return;
+    }
+
     if (cmd.type === 'send' && this.wa) {
       await this.wa.sendMessage(cmd.to, cmd.text);
     }

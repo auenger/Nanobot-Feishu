@@ -45,16 +45,35 @@ class ChannelManager:
             except ImportError as e:
                 logger.warning(f"Telegram channel not available: {e}")
         
-        # WhatsApp channel
-        if self.config.channels.whatsapp.enabled:
+        # Feishu channel
+        feishu_enabled = False
+        if hasattr(self.config.channels, "feishu") and self.config.channels.feishu.enabled:
+            feishu_enabled = True
             try:
-                from nanobot.channels.whatsapp import WhatsAppChannel
-                self.channels["whatsapp"] = WhatsAppChannel(
-                    self.config.channels.whatsapp, self.bus
+                from nanobot.channels.feishu import FeishuChannel
+                self.channels["feishu"] = FeishuChannel(
+                    self.config.channels.feishu, self.bus
                 )
-                logger.info("Bridge channel enabled")
+                logger.info("Feishu channel enabled")
             except ImportError as e:
-                logger.warning(f"Bridge channel not available: {e}")
+                logger.warning(f"Feishu channel not available: {e}")
+
+        # WhatsApp channel
+        # If Feishu is enabled, we disable WhatsApp to prevent bridge conflicts 
+        # (since they share the same bridge process and port, using both simultaneously 
+        # requires careful configuration which is often not needed).
+        if self.config.channels.whatsapp.enabled:
+            if feishu_enabled:
+                logger.warning("WhatsApp channel disabled because Feishu is enabled (Bridge conflict prevention)")
+            else:
+                try:
+                    from nanobot.channels.whatsapp import WhatsAppChannel
+                    self.channels["whatsapp"] = WhatsAppChannel(
+                        self.config.channels.whatsapp, self.bus
+                    )
+                    logger.info("WhatsApp channel enabled")
+                except ImportError as e:
+                    logger.warning(f"WhatsApp channel not available: {e}")
     
     async def start_all(self) -> None:
         """Start WhatsApp channel and the outbound dispatcher."""
@@ -65,7 +84,7 @@ class ChannelManager:
         # Start outbound dispatcher
         self._dispatch_task = asyncio.create_task(self._dispatch_outbound())
         
-        # Start Feishu channel
+        # Start WhatsApp channel
         tasks = []
         for name, channel in self.channels.items():
             logger.info(f"Starting {name} channel...")
