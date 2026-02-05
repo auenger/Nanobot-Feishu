@@ -32,15 +32,14 @@ class LiteLLMProvider(LLMProvider):
             (api_base and "openrouter" in api_base)
         )
         
-        # Detect Zhipu/GLM
-        self.is_zhipu = (
-            (api_base and "bigmodel.cn" in api_base) or
-            ("zhipu" in default_model or "glm" in default_model)
+        # Track if using custom endpoint (vLLM, etc.) and NOT a specific provider
+        self.is_vllm = (
+            bool(api_base) and 
+            not self.is_openrouter and 
+            "anthropic" not in default_model and
+            "gemini" not in default_model and
+            "zhipu" not in default_model
         )
-        
-        # Track if using custom endpoint (vLLM, etc.)
-        # Exclude Zhipu from vLLM handling because Zhipu has its own logic (or standard OpenAI logic)
-        self.is_vllm = bool(api_base) and not self.is_openrouter and not self.is_zhipu
         
         # Configure LiteLLM based on provider
         if api_key:
@@ -50,17 +49,17 @@ class LiteLLMProvider(LLMProvider):
             elif self.is_vllm:
                 # vLLM/custom endpoint - uses OpenAI-compatible API
                 os.environ["OPENAI_API_KEY"] = api_key
-            elif self.is_zhipu:
-                # Zhipu AI - LiteLLM supports generic OpenAI client for Zhipu v4
-                os.environ["OPENAI_API_KEY"] = api_key
             elif "anthropic" in default_model:
-                os.environ.setdefault("ANTHROPIC_API_KEY", api_key)
+                os.environ["ANTHROPIC_API_KEY"] = api_key
             elif "openai" in default_model or "gpt" in default_model:
-                os.environ.setdefault("OPENAI_API_KEY", api_key)
+                os.environ["OPENAI_API_KEY"] = api_key
+                # os.environ.setdefault("OPENAI_API_KEY", api_key) # Use setdefault for others if preferred, but explicit is safer
             elif "gemini" in default_model.lower():
-                os.environ.setdefault("GEMINI_API_KEY", api_key)
+                os.environ["GEMINI_API_KEY"] = api_key
+            elif "zhipu" in default_model or "glm" in default_model or "zai" in default_model:
+                os.environ["ZHIPUAI_API_KEY"] = api_key
             elif "groq" in default_model:
-                os.environ.setdefault("GROQ_API_KEY", api_key)
+                os.environ["GROQ_API_KEY"] = api_key
         
         if api_base:
             litellm.api_base = api_base
@@ -95,25 +94,9 @@ class LiteLLMProvider(LLMProvider):
         if self.is_openrouter and not model.startswith("openrouter/"):
             model = f"openrouter/{model}"
         
-        # For Zhipu/Z.ai
-        if self.is_zhipu:
-            # If using API Base (v4), best to treat as standard OpenAI compatible
-            # Prefix with 'openai/' tells LiteLLM to use standard chat/completions endpoint
-            # checking if it already has a provider prefix
-            if not any(model.startswith(p + "/") for p in ["openai", "zhipu", "glm"]):
-                 model = f"openai/{model}"
-            # If user explicitly used zhipu/ prefix but we are using generic api_base, 
-            # we might want to switch to openai/ or let LiteLLM handle zhipu native. 
-            # Usually zhipu's v4 is fully openai compatible.
-        
         # For vLLM, use hosted_vllm/ prefix per LiteLLM docs
-        # Convert openai/ prefix to hosted_vllm/ if user specified it
-        if self.is_vllm:
+        elif self.is_vllm and not model.startswith("hosted_vllm/"):
             model = f"hosted_vllm/{model}"
-        
-        # For Gemini, ensure gemini/ prefix if not already present
-        if "gemini" in model.lower() and not model.startswith("gemini/"):
-            model = f"gemini/{model}"
         
         kwargs: dict[str, Any] = {
             "model": model,
