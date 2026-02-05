@@ -27,6 +27,7 @@ class FeishuConfig(BaseModel):
     verification_token: str = ""
     encrypt_key: str = ""
     api_base: str = "https://open.feishu.cn/open-apis"
+    bridge_url: str = "ws://localhost:3001"
 
 
 class ChannelsConfig(BaseModel):

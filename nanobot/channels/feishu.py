@@ -34,7 +34,7 @@ class FeishuChannel(BaseChannel):
     
     async def start(self) -> None:
         """Start the Feishu channel by connecting to the bridge."""
-        bridge_url = "ws://localhost:3001"
+        bridge_url = self.config.bridge_url
         logger.info(f"Connecting to Feishu bridge at {bridge_url}...")
         
         self._running = True

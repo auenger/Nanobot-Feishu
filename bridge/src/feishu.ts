@@ -66,7 +66,7 @@ export class FeishuManager {
     }
 
     private async handleEvent(data: any) {
-        // console.log('[Feishu] Raw Event:', JSON.stringify(data));
+        console.log('[Feishu] Raw Event:', JSON.stringify(data));
 
         // Handle Schema 2.0 (Direct) or Legacy (Nested in .event)
         const eventType = data.event_type || data?.header?.event_type;
@@ -98,8 +98,20 @@ export class FeishuManager {
                 } catch {
                     text = msg.content;
                 }
+            } else if (msgType === 'image') {
+                // Parse image content to extract image_key
+                try {
+                    const contentJson = JSON.parse(msg.content);
+                    if (contentJson.image_key) {
+                        text = `[image:${contentJson.image_key}]`;
+                    } else {
+                        text = '[image]';
+                    }
+                } catch {
+                    text = '[image]';
+                }
             } else {
-                text = `[${msgType}]`; // e.g. [image], [post]
+                text = `[${msgType}]`; // e.g. [post], [file]
             }
 
             const feishuMsg: FeishuMessage = {
@@ -113,7 +125,7 @@ export class FeishuManager {
                 name: sender.sender_id.user_id
             };
 
-            console.log(`[Feishu] 📩 Message from ${feishuMsg.from}: ${text}`);
+            console.log(`[Feishu] Parsed message: ${text} from ${feishuMsg.from}`);
 
             if (this.onMessage) {
                 this.onMessage(feishuMsg);
@@ -121,15 +133,54 @@ export class FeishuManager {
         }
     }
 
+    /**
+     * Check if text contains Markdown formatting
+     */
+    private hasMarkdown(text: string): boolean {
+        // Check for common Markdown patterns
+        const mdPatterns = [
+            /^#{1,6}\s/m,           // Headers
+            /\*\*.*\*\*/,           // Bold
+            /\*.*\*/,               // Italic
+            /`.*`/,                 // Inline code
+            /```[\s\S]*```/,        // Code blocks
+            /^\s*[-*+]\s/m,         // Unordered lists
+            /^\s*\d+\.\s/m,         // Ordered lists
+            /\[.*\]\(.*\)/,         // Links
+            /^>\s/m,                // Blockquotes
+        ];
+
+        return mdPatterns.some(pattern => pattern.test(text));
+    }
+
+    /**
+     * Send a message to Feishu
+     * Automatically detects Markdown and sends as card if needed
+     */
     async sendMessage(to: string, text: string) {
         // Determine if 'to' is a chat_id (group) or open_id (user)
         // Feishu IDs are tricky. Assuming we store the correct ID from 'receive'.
         // Usually receive_id_type defaults to open_id.
 
+        const useMarkdown = this.hasMarkdown(text);
+
+        if (useMarkdown) {
+            // Send as interactive card with Markdown support
+            await this.sendMarkdownCard(to, text);
+        } else {
+            // Send as plain text
+            await this.sendPlainText(to, text);
+        }
+    }
+
+    /**
+     * Send plain text message
+     */
+    private async sendPlainText(to: string, text: string) {
         try {
             await this.client.im.message.create({
                 params: {
-                    receive_id_type: 'open_id', // default attempt
+                    receive_id_type: 'open_id',
                 },
                 data: {
                     receive_id: to,
@@ -150,6 +201,58 @@ export class FeishuManager {
                     content: JSON.stringify({ text }),
                 },
             });
+        }
+    }
+
+    /**
+     * Send Markdown as interactive card
+     */
+    private async sendMarkdownCard(to: string, markdown: string) {
+        // Build card with Markdown content
+        const card = {
+            config: {
+                wide_screen_mode: true,
+            },
+            elements: [
+                {
+                    tag: 'markdown',
+                    content: markdown,
+                },
+            ],
+        };
+
+        try {
+            await this.client.im.message.create({
+                params: {
+                    receive_id_type: 'open_id',
+                },
+                data: {
+                    receive_id: to,
+                    msg_type: 'interactive',
+                    content: JSON.stringify(card),
+                },
+            });
+            console.log('[Feishu] ✅ Sent Markdown card');
+        } catch (e) {
+            console.error('[Feishu] Send Markdown card error, retrying as chat_id...', e);
+            // Fallback to chat_id
+            try {
+                await this.client.im.message.create({
+                    params: {
+                        receive_id_type: 'chat_id',
+                    },
+                    data: {
+                        receive_id: to,
+                        msg_type: 'interactive',
+                        content: JSON.stringify(card),
+                    },
+                });
+                console.log('[Feishu] ✅ Sent Markdown card (chat_id)');
+            } catch (e2) {
+                console.error('[Feishu] Failed to send Markdown card, falling back to plain text...', e2);
+                // Last resort: send as plain text
+                await this.sendPlainText(to, markdown);
+            }
         }
     }
 }
